@@ -7,18 +7,21 @@
 #include <gtkmm/label.h>
 #include <gtkmm/cssprovider.h>
 #include <gtkmm/messagedialog.h>
+#include <glib.h>
 
-#include <stdlib.h>
-#include <stdbool.h>
+#include <iostream>
+#include <cstdbool>
 #include "sudoku_strategy.hpp"
 #include "shuffle.hpp"
 
 #define BLOCK_SIZE 70
 
 Gtk::Entry *entries[N][N];
+Gtk::Window *window;
 Gtk::Grid *grid;
 Gtk::Fixed *fixed;
 Glib::RefPtr<Gtk::Application> app;
+Glib::RefPtr<Gtk::Builder> builder;
 
 int activate_entry_row, activate_entry_col;
 bool is_label[N][N];
@@ -29,15 +32,15 @@ void hint();
 
 void check();
 
-void new_game(const Glib::ustring &, int *);
+void new_game();
 
-void entry_changed(int i, int j);
+void entry_changed();
 
-void entry_state_changed(int i, int j);
+bool entry_activate(GdkEventFocus *, int, int);
 
-void entry_insert_text(Gtk::Editable *editable);
+void entry_insert_text(const Glib::ustring &, int *);
 
-void activate(const Glib::ustring &, int *);
+void activate();
 
 void init_game();
 
@@ -72,84 +75,95 @@ void check()
     Gtk::Dialog *dialog;
     if (if_success)
     {
-        dialog = new Gtk::MessageDialog(NULL, "You Win!");
+        dialog = new Gtk::MessageDialog(*window, "You Win!");
         dialog->set_title("success");
         dialog->set_size_request(200, 200);
     }
     else
     {
-
-        dialog = new Gtk::MessageDialog(NULL, "Keep it up!");
+        dialog = new Gtk::MessageDialog(*window, "Keep it up!");
         dialog->set_title("fail");
         dialog->set_size_request(200, 200);
     }
-    dialog->show();
+    dialog->run();
+    delete dialog;
 }
 
-void new_game(const Glib::ustring &, int *)
+void new_game()
 {
+    g_print("NEW GAME!!\n");
     init_game();
 }
 
-void entry_changed(int i, int j)
+void entry_changed()
 {
-    int number = std::stoi(entries[i][j]->get_text());
-    sudos_add(number, activate_entry_row, activate_entry_col);
+    g_print("%d %d\n", activate_entry_row, activate_entry_col);
+    g_print("%s\n", entries[activate_entry_row][activate_entry_col]->get_text());
 }
 
-void entry_state_changed(int i, int j)
+bool entry_activate(GdkEventFocus *focus, int i, int j)
 {
-    int number = std::stoi(entries[i][j]->get_text());
-    sudos_add(number, activate_entry_row, activate_entry_col);
+    activate_entry_row = i;
+    activate_entry_col = j;
+    g_print("%d %d\n", i, j);
+    return true;
 }
 
-void entry_insert_text(Gtk::Editable *editable)
+void entry_insert_text(const Glib::ustring &text, int *ptr)
 {
     int i;
-    Glib::ustring text = editable->get_text();
     int length = text.length();
-
+    std::cout << "TEXT:" << text << std::endl;
+    const char *c_str = text.data();
+    printf("TEXT_CHANGE:%s\n", c_str);
+    bool res = true;
     for (i = 0; i < length; i++)
     {
-        if (!(text[i] >= '1' && text[i] <= '9'))
+        if (!(c_str[i] >= '1' && c_str[i] <= '9'))
         {
-            g_signal_stop_emission_by_name(editable, "insert-text");
-            return;
+            res = false;
+            break;
         }
+    }
+
+    if (!res)
+        entries[activate_entry_row][activate_entry_col]->set_text("");
+    else
+    {
+        entries[activate_entry_row][activate_entry_col]->set_text(text);
+        int number = atoi(c_str);
+        sudos_add(number, activate_entry_row, activate_entry_col);
     }
 }
 
-void activate(const Glib::ustring &, int *)
+void activate()
 {
-    auto builder = Gtk::Builder::create_from_file("./builder.glade");
-
-    // get window
-    auto window = builder->get_widget<Gtk::Window>("window");
-
-    window->set_application(app);
-    window->set_resizable(false);
-
+    g_print("ACTIVATE!!\n");
     // set label content
-    auto label = builder->get_widget<Gtk::Label>("title");
+    Gtk::Label *label = nullptr;
+    builder->get_widget<Gtk::Label>("title", label);
     label->set_label("数独 Cr.Civitasv Using C++");
 
     // fixed
-    fixed = builder->get_widget<Gtk::Fixed>("fixed");
+    builder->get_widget<Gtk::Fixed>("fixed", fixed);
 
     // check button
-    auto check_btn = builder->get_widget<Gtk::Button>("check");
+    Gtk::Button *check_btn = nullptr;
+    builder->get_widget<Gtk::Button>("check", check_btn);
     check_btn->signal_clicked().connect([]()
                                         { check(); });
 
     // new game button
-    auto new_game_btn = builder->get_widget<Gtk::Button>("new_game");
-    check_btn->signal_clicked().connect([](const Glib::ustring &a, int *b)
-                                        { new_game(a, b); });
+    Gtk::Button *new_game_btn = nullptr;
+    builder->get_widget<Gtk::Button>("new_game", new_game_btn);
+    new_game_btn->signal_clicked().connect([]()
+                                           { new_game(); });
 
     // hint button
-    auto hint_btn = builder->get_widget<Gtk::Button>("hint");
-    check_btn->signal_clicked().connect([]()
-                                        { hint(); });
+    Gtk::Button *hint_btn = nullptr;
+    builder->get_widget<Gtk::Button>("hint", hint_btn);
+    hint_btn->signal_clicked().connect([]()
+                                       { hint(); });
 
     // grid
     grid = new Gtk::Grid();
@@ -159,13 +173,13 @@ void activate(const Glib::ustring &, int *)
 
     fixed->put(*grid, 0, 0);
     init_game();
-    window->show();
 }
 
 void init_game()
 {
     // clear
-    fixed->remove(*grid);
+    if (grid != NULL)
+        fixed->remove(*grid);
     grid = new Gtk::Grid();
     grid->set_column_spacing(0);
     grid->set_row_spacing(0);
@@ -191,10 +205,9 @@ void init_game()
 
                 gtk_css_set(entries[i][j]);
                 grid->attach(*entries[i][j], j, i, 1, 1);
-                entries[i][j]->signal_changed().connect([i, j]()
-                                                        { entry_changed(i, j); });
-                entries[i][j]->signal_insert_text().connect([i, j]()
-                                                            { entry_insert_text(entries[i][j]); });
+                entries[i][j]->signal_insert_text().connect(sigc::ptr_fun(&entry_insert_text));
+                entries[i][j]->signal_focus_in_event().connect([i, j](GdkEventFocus *focus)
+                                                               { return entry_activate(focus, i, j); });
                 entries[i][j]->show();
             }
             else
@@ -215,13 +228,18 @@ void init_game()
 int main(int argc,
          char **argv)
 {
-    app = Gtk::Application::create("com.civitasv.sudoku");
-    int status;
+    app = Gtk::Application::create(argc, argv, "com.civitasv.sudoku");
 
-    // // add callback on active application
-    // app->signal_activate().connect([](const Glib::ustring &a, int *b)
-    //                                 { activate(a, b); });
+    builder = Gtk::Builder::create_from_file("./builder.glade");
 
-    // free memory
-    return app->run(argc, argv);
+    // get window
+    window = nullptr;
+    builder->get_widget("window", window);
+
+    window->set_resizable(false);
+
+    // add callback on active application
+    app->signal_activate().connect(sigc::ptr_fun(&activate));
+
+    return app->run(*window);
 }
